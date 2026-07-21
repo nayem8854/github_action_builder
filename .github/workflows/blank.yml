@@ -55,7 +55,6 @@ jobs:
             lld \
             llvm \
             pahole \
-            python2 \
             python3 \
             rsync \
             unzip \
