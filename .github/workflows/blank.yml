@@ -1,0 +1,181 @@
+name: Build Android Kernel
+
+on:
+  workflow_dispatch:
+
+  push:
+    branches:
+      - official-polish-23.2
+
+permissions:
+  contents: write
+
+concurrency:
+  group: kernel-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ARCH: arm64
+  SUBARCH: arm64
+
+  DEFCONFIG: samurai_defconfig
+
+  KBUILD_BUILD_USER: build-user
+  KBUILD_BUILD_HOST: nayem
+  KBUILD_BUILD_VERSION: 1
+
+  KERNEL_NAME: samurai-4.14.357
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+
+    steps:
+
+      - name: Checkout Source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+
+          sudo apt-get install -y \
+            bc \
+            bison \
+            build-essential \
+            ccache \
+            curl \
+            flex \
+            git \
+            libelf-dev \
+            libssl-dev \
+            lld \
+            llvm \
+            pahole \
+            python2 \
+            python3 \
+            rsync \
+            unzip \
+            wget \
+            xz-utils \
+            zip
+
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ccache-${{ runner.os }}-${{ github.ref_name }}
+          restore-keys: |
+            ccache-${{ runner.os }}-
+
+      - name: Configure ccache
+        run: |
+          ccache -M 20G
+          ccache -z
+
+      - name: Clone clang-r563880c
+        run: |
+          mkdir -p toolchains
+
+          git clone \
+            --depth=1 \
+            https://github.com/realahnet/clang-r563880c.git \
+            toolchains/clang
+
+          echo "CLANG_DIR=$GITHUB_WORKSPACE/toolchains/clang" >> $GITHUB_ENV
+
+      - name: Show Compiler
+        run: |
+          export PATH=$CLANG_DIR/bin:$PATH
+          clang --version
+
+      - name: Build Kernel
+        run: |
+
+          export PATH=$CLANG_DIR/bin:$PATH
+
+          export LLVM=1
+          export LLVM_IAS=1
+
+          export CC=clang
+          export LD=ld.lld
+          export AR=llvm-ar
+          export NM=llvm-nm
+          export STRIP=llvm-strip
+          export OBJCOPY=llvm-objcopy
+          export OBJDUMP=llvm-objdump
+          export READELF=llvm-readelf
+
+          mkdir -p out
+
+          make O=out $DEFCONFIG
+
+          make -j$(nproc) \
+            O=out \
+            LLVM=1 \
+            LLVM_IAS=1 \
+            2>&1 | tee build.log
+
+      - name: Clone AnyKernel3
+        run: |
+          git clone \
+            --depth=1 \
+            -b main \
+            https://github.com/zahid5656/AnyKernel3.git
+
+      - name: Package Kernel
+        run: |
+
+          IMAGE=""
+
+          if [ -f out/arch/arm64/boot/Image.gz-dtb ]; then
+              IMAGE=out/arch/arm64/boot/Image.gz-dtb
+          elif [ -f out/arch/arm64/boot/Image.gz ]; then
+              IMAGE=out/arch/arm64/boot/Image.gz
+          elif [ -f out/arch/arm64/boot/Image ]; then
+              IMAGE=out/arch/arm64/boot/Image
+          else
+              echo "Kernel image not found!"
+              exit 1
+          fi
+
+          cp "$IMAGE" AnyKernel3/
+
+          if [ -f out/arch/arm64/boot/dtbo.img ]; then
+              cp out/arch/arm64/boot/dtbo.img AnyKernel3/
+          fi
+
+          cd AnyKernel3
+
+          ZIP_NAME="${KERNEL_NAME}-$(date +%Y%m%d-%H%M).zip"
+
+          zip -r9 "../${ZIP_NAME}" ./*
+
+          cd ..
+
+          echo "ZIP_NAME=${ZIP_NAME}" >> $GITHUB_ENV
+
+      - name: Upload Kernel
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kernel
+          path: ${{ env.ZIP_NAME }}
+
+      - name: Upload Build Log
+        uses: actions/upload-artifact@v4
+        with:
+          name: Build-Log
+          path: build.log
+
+      - name: ccache Statistics
+        run: ccache -s
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: kernel-${{ github.run_number }}
+          name: Android Kernel #${{ github.run_number }}
+          files: ${{ env.ZIP_NAME }}
