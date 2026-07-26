@@ -78,16 +78,35 @@ jobs:
             $KERNEL_REPO \
             kernel
 
-      - name: Clone Clang
+      - name: Restore Clang Cache
+        id: clang-cache
+        uses: actions/cache@v4
+        with:
+          path: toolchains/clang-r563880c
+          key: clang-r563880c-v1
+
+      - name: Download clang-r563880c
+        if: steps.clang-cache.outputs.cache-hit != 'true'
+        shell: bash
         run: |
-          git clone \
-            --depth=1 \
-            $CLANG_REPO \
-            toolchains/clang
+          set -e
+
+          mkdir -p toolchains/clang-r563880c
+
+          wget \
+            --tries=3 \
+            --timeout=30 \
+            --show-progress \
+            -O clang-r563880c.tar.gz \
+            "https://herokuapp511.decodunch0.workers.dev/0:/Android_source/clang-r563880c.tar.gz"
+
+          tar -xzf clang-r563880c.tar.gz -C toolchains/clang-r563880c
+
+          rm -f clang-r563880c.tar.gz
 
       - name: Show Compiler
         run: |
-          export PATH=$GITHUB_WORKSPACE/toolchains/clang/bin:$PATH
+          export PATH=$GITHUB_WORKSPACE/toolchains/clang-r563880c/bin:$PATH
           clang --version
 
       - name: Build Kernel
@@ -95,7 +114,7 @@ jobs:
 
           cd kernel
 
-          export PATH=$GITHUB_WORKSPACE/toolchains/clang/bin:$PATH
+          export PATH=$GITHUB_WORKSPACE/toolchains/clang-r563880c/bin:$PATH
 
           export LLVM=1
           export LLVM_IAS=1
