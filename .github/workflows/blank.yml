@@ -12,7 +12,7 @@ concurrency:
 
 env:
   KERNEL_REPO: https://github.com/nayem8854/android_kernel_realme_sm8150_qpr2.git
-  KERNEL_BRANCH: debug-23.2
+  KERNEL_BRANCH: fix-s3706-deep-sleep-12893162691613930993
 
   #CLANG_REPO: https://gitlab.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-r547379.git
   CLANG_REPO: https://github.com/realahnet/clang-r563880c.git
