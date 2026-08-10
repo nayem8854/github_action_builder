@@ -14,10 +14,14 @@ on:
         description: 'Build script filename'
         required: true
         default: 'build_ksun_susfs.sh'
+      build_script_link:
+        description: 'Direct URL to download the build script into the workspace'
+        required: false
+        default: ''
       workspace_folder_name:
         description: 'Workspace folder name for checkout and build'
         required: true
-        default: 'kernel'
+        default: 'kernel_build_workspace'
       kernel_zip_name:
         description: 'Kernel zip file name to include in the release'
         required: true
@@ -36,9 +40,28 @@ jobs:
 
       - name: Set workflow inputs
         run: |
-          echo "WORKSPACE_FOLDER_NAME=${{ inputs.workspace_folder_name }}" >> $GITHUB_ENV
+          echo "KERNEL_SOURCE=${{ inputs.kernel_source }}" >> $GITHUB_ENV
+          echo "SOURCE_BRANCH=${{ inputs.source_branch }}" >> $GITHUB_ENV
           echo "BUILD_SCRIPT=${{ inputs.build_script }}" >> $GITHUB_ENV
+          echo "BUILD_SCRIPT_LINK=${{ inputs.build_script_link }}" >> $GITHUB_ENV
+          echo "WORKSPACE_FOLDER_NAME=${{ inputs.workspace_folder_name }}" >> $GITHUB_ENV
           echo "KERNEL_ZIP_NAME=${{ inputs.kernel_zip_name }}" >> $GITHUB_ENV
+
+      - name: Clone kernel source
+        run: |
+          mkdir -p "${WORKSPACE_FOLDER_NAME}"
+          if [[ "${KERNEL_SOURCE}" == https://* || "${KERNEL_SOURCE}" == http://* ]]; then
+            REPO_URL="${KERNEL_SOURCE}"
+          else
+            REPO_URL="https://github.com/${KERNEL_SOURCE}.git"
+          fi
+          git clone --depth 1 --branch "${SOURCE_BRANCH}" "${REPO_URL}" "${WORKSPACE_FOLDER_NAME}"
+
+      - name: Download build script
+        if: ${{ inputs.build_script_link != '' }}
+        run: |
+          mkdir -p "${WORKSPACE_FOLDER_NAME}"
+          curl -L "${{ inputs.build_script_link }}" -o "${WORKSPACE_FOLDER_NAME}/${BUILD_SCRIPT}"
 
       - name: Set timezone
         run: |
@@ -57,11 +80,12 @@ jobs:
 
       - name: Make script executable
         run: |
-          chmod +x "${BUILD_SCRIPT}"
-          sed -i 's/\r$//' "${BUILD_SCRIPT}"
+          chmod +x "${WORKSPACE_FOLDER_NAME}/${BUILD_SCRIPT}"
+          sed -i 's/\r$//' "${WORKSPACE_FOLDER_NAME}/${BUILD_SCRIPT}"
 
       - name: Build Kernel
         run: |
+          cd "${WORKSPACE_FOLDER_NAME}"
           ./"${BUILD_SCRIPT}"
 
       - name: Prepare Release Artifacts
