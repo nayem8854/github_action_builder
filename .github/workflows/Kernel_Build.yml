@@ -1,0 +1,122 @@
+name: Build Kernel
+
+on:
+  workflow_dispatch:
+    inputs:
+      kernel_source:
+        description: 'Kernel source repository (owner/repo or repo URL)'
+        required: true
+      source_branch:
+        description: 'Source branch name'
+        required: true
+        default: 'main'
+      build_script:
+        description: 'Build script filename'
+        required: true
+        default: 'build_ksun_susfs.sh'
+      workspace_folder_name:
+        description: 'Workspace folder name for checkout and build'
+        required: true
+        default: 'kernel'
+      kernel_zip_name:
+        description: 'Kernel zip file name to include in the release'
+        required: true
+        default: 'kernel.zip'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set workflow inputs
+        run: |
+          echo "WORKSPACE_FOLDER_NAME=${{ inputs.workspace_folder_name }}" >> $GITHUB_ENV
+          echo "BUILD_SCRIPT=${{ inputs.build_script }}" >> $GITHUB_ENV
+          echo "KERNEL_ZIP_NAME=${{ inputs.kernel_zip_name }}" >> $GITHUB_ENV
+
+      - name: Set timezone
+        run: |
+          sudo timedatectl set-timezone Asia/Dhaka
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc git-core gnupg flex bison build-essential \
+            zip curl wget zlib1g-dev libc6-dev-i386 \
+            libncurses5 lib32ncurses5-dev x11proto-core-dev \
+            libx11-dev lib32z1-dev libgl1-mesa-dev \
+            libxml2-utils xsltproc unzip fontconfig \
+            libssl-dev ccache cpio
+
+      - name: Make script executable
+        run: |
+          chmod +x "${BUILD_SCRIPT}"
+          sed -i 's/\r$//' "${BUILD_SCRIPT}"
+
+      - name: Build Kernel
+        run: |
+          ./"${BUILD_SCRIPT}"
+
+      - name: Prepare Release Artifacts
+        id: artifacts
+        run: |
+          OUT_DIR="out"
+          RELEASE_FILES=""
+
+          # 1. Check Image.gz-dtb or Image.gz
+          if [[ -f "$OUT_DIR/arch/arm64/boot/Image.gz-dtb" ]]; then
+            RELEASE_FILES="$OUT_DIR/arch/arm64/boot/Image.gz-dtb"
+          elif [[ -f "$OUT_DIR/arch/arm64/boot/Image.gz" ]]; then
+            RELEASE_FILES="$OUT_DIR/arch/arm64/boot/Image.gz"
+          fi
+
+          # 2. Check dtbo.img (if compiled)
+          if [[ -f "$OUT_DIR/arch/arm64/boot/dtbo.img" ]]; then
+            RELEASE_FILES="$RELEASE_FILES
+          $OUT_DIR/arch/arm64/boot/dtbo.img"
+          fi
+
+          # 3. Add explicit kernel zip name if available
+          if [[ -n "$KERNEL_ZIP_NAME" ]]; then
+            if [[ -f "$KERNEL_ZIP_NAME" ]]; then
+              RELEASE_FILES="$RELEASE_FILES
+          $KERNEL_ZIP_NAME"
+            elif [[ -f "${WORKSPACE_FOLDER_NAME}/$KERNEL_ZIP_NAME" ]]; then
+              RELEASE_FILES="$RELEASE_FILES
+          ${WORKSPACE_FOLDER_NAME}/$KERNEL_ZIP_NAME"
+            fi
+          fi
+
+          # 4. Check for any flashable ZIPs
+          if [[ -z "$RELEASE_FILES" ]]; then
+            ZIP=$(find . -maxdepth 1 -name "*.zip" | head -n 1)
+            if [[ -n "$ZIP" ]]; then
+              RELEASE_FILES="$ZIP"
+            fi
+          fi
+
+          echo "files<<EOF" >> $GITHUB_OUTPUT
+          echo "$RELEASE_FILES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Generate Tag
+        id: tag
+        run: |
+          echo "tag=$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: Kernel Build ${{ steps.tag.outputs.tag }}
+          files: ${{ steps.artifacts.outputs.files }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
