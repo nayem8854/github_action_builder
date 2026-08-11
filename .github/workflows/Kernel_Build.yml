@@ -91,39 +91,11 @@ jobs:
       - name: Prepare Release Artifacts
         id: artifacts
         run: |
-          OUT_DIR="out"
           RELEASE_FILES=""
 
-          # 1. Check Image.gz-dtb or Image.gz
-          if [[ -f "$OUT_DIR/arch/arm64/boot/Image.gz-dtb" ]]; then
-            RELEASE_FILES="$OUT_DIR/arch/arm64/boot/Image.gz-dtb"
-          elif [[ -f "$OUT_DIR/arch/arm64/boot/Image.gz" ]]; then
-            RELEASE_FILES="$OUT_DIR/arch/arm64/boot/Image.gz"
-          fi
-
-          # 2. Check dtbo.img (if compiled)
-          if [[ -f "$OUT_DIR/arch/arm64/boot/dtbo.img" ]]; then
-            RELEASE_FILES="$RELEASE_FILES
-          $OUT_DIR/arch/arm64/boot/dtbo.img"
-          fi
-
-          # 3. Add explicit kernel zip name if available
-          if [[ -n "$KERNEL_ZIP_NAME" ]]; then
-            if [[ -f "$KERNEL_ZIP_NAME" ]]; then
-              RELEASE_FILES="$RELEASE_FILES
-          $KERNEL_ZIP_NAME"
-            elif [[ -f "${WORKSPACE_FOLDER_NAME}/$KERNEL_ZIP_NAME" ]]; then
-              RELEASE_FILES="$RELEASE_FILES
-          ${WORKSPACE_FOLDER_NAME}/$KERNEL_ZIP_NAME"
-            fi
-          fi
-
-          # 4. Check for any flashable ZIPs
-          if [[ -z "$RELEASE_FILES" ]]; then
-            ZIP=$(find . -maxdepth 1 -name "*.zip" | head -n 1)
-            if [[ -n "$ZIP" ]]; then
-              RELEASE_FILES="$ZIP"
-            fi
+          ZIP_FILE=$(find "${WORKSPACE_FOLDER_NAME}" -type f -name "*.zip" | head -n 1)
+          if [[ -n "$ZIP_FILE" ]]; then
+            RELEASE_FILES="$ZIP_FILE"
           fi
 
           echo "files<<EOF" >> $GITHUB_OUTPUT
